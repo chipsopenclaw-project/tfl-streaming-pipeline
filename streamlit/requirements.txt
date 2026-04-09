@@ -1,5 +1,6 @@
 streamlit
-pyathena
+pyathena[sqlalchemy]
 pandas
 plotly
 boto3
+sqlalchemy
