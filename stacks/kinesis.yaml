@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "TfL Streaming Pipeline - Kinesis Data Stream + Firehose"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+Resources:
+
+  # ── Kinesis Data Stream ────────────────────────────────────────────────────
+  TubeArrivalsStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub "tfl-${Environment}-euw2-kinesis-tube-arrivals"
+      ShardCount: 1
+      RetentionPeriodHours: 24
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── Kinesis Firehose (Stream -> S3 Bronze) ────────────────────────────────
+  TubeArrivalsFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    DependsOn: TubeArrivalsStream
+    Properties:
+      DeliveryStreamName: !Sub "tfl-${Environment}-euw2-firehose-tube-arrivals"
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: !GetAtt TubeArrivalsStream.Arn
+        RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/tfl-${Environment}-firehose-role"
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !Sub "arn:aws:s3:::tfl-${Environment}-euw2-s3-bronze"
+        RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/tfl-${Environment}-firehose-role"
+        Prefix: "arrivals/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/"
+        ErrorOutputPrefix: "errors/!{firehose:error-output-type}/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 5
+        CompressionFormat: UNCOMPRESSED
+        EncryptionConfiguration:
+          NoEncryptionConfig: NoEncryption
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  StreamName:
+    Value: !Ref TubeArrivalsStream
+    Export:
+      Name: !Sub "tfl-${Environment}-kinesis-stream-name"
+
+  StreamArn:
+    Value: !GetAtt TubeArrivalsStream.Arn
+    Export:
+      Name: !Sub "tfl-${Environment}-kinesis-stream-arn"
+
+  FirehoseName:
+    Value: !Ref TubeArrivalsFirehose
+    Export:
+      Name: !Sub "tfl-${Environment}-firehose-name"
