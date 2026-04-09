@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "TfL Streaming Pipeline - IAM Roles"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+Resources:
+
+  # ── Lambda Role (write to Kinesis + CloudWatch logs) ──────────────────────
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "tfl-${Environment}-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: KinesisWritePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kinesis:PutRecord
+                  - kinesis:PutRecords
+                Resource: !Sub "arn:aws:kinesis:eu-west-2:${AWS::AccountId}:stream/tfl-${Environment}-euw2-kinesis-tube-arrivals"
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── Firehose Role (write to S3 Bronze) ────────────────────────────────────
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "tfl-${Environment}-firehose-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3BronzeWritePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::tfl-${Environment}-euw2-s3-bronze"
+                  - !Sub "arn:aws:s3:::tfl-${Environment}-euw2-s3-bronze/*"
+        - PolicyName: KinesisReadPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kinesis:GetRecords
+                  - kinesis:GetShardIterator
+                  - kinesis:DescribeStream
+                  - kinesis:ListShards
+                Resource: !Sub "arn:aws:kinesis:eu-west-2:${AWS::AccountId}:stream/tfl-${Environment}-euw2-kinesis-tube-arrivals"
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── Glue Role (read/write Bronze, Silver, Gold + CloudWatch) ──────────────
+  GlueRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "tfl-${Environment}-glue-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: S3MedallionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::tfl-${Environment}-euw2-s3-bronze"
+                  - !Sub "arn:aws:s3:::tfl-${Environment}-euw2-s3-bronze/*"
+                  - !Sub "arn:aws:s3:::tfl-${Environment}-euw2-s3-silver"
+                  - !Sub "arn:aws:s3:::tfl-${Environment}-euw2-s3-silver/*"
+                  - !Sub "arn:aws:s3:::tfl-${Environment}-euw2-s3-gold"
+                  - !Sub "arn:aws:s3:::tfl-${Environment}-euw2-s3-gold/*"
+                  - !Sub "arn:aws:s3:::tfl-${Environment}-euw2-s3-glue-scripts"
+                  - !Sub "arn:aws:s3:::tfl-${Environment}-euw2-s3-glue-scripts/*"
+        - PolicyName: KinesisReadPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kinesis:GetRecords
+                  - kinesis:GetShardIterator
+                  - kinesis:DescribeStream
+                  - kinesis:ListShards
+                Resource: !Sub "arn:aws:kinesis:eu-west-2:${AWS::AccountId}:stream/tfl-${Environment}-euw2-kinesis-tube-arrivals"
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  LambdaRoleArn:
+    Value: !GetAtt LambdaRole.Arn
+    Export:
+      Name: !Sub "tfl-${Environment}-lambda-role-arn"
+
+  FirehoseRoleArn:
+    Value: !GetAtt FirehoseRole.Arn
+    Export:
+      Name: !Sub "tfl-${Environment}-firehose-role-arn"
+
+  GlueRoleArn:
+    Value: !GetAtt GlueRole.Arn
+    Export:
+      Name: !Sub "tfl-${Environment}-glue-role-arn"
