@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "TfL Streaming Pipeline - Lambda Function"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+Resources:
+
+  # ── Lambda Function ────────────────────────────────────────────────────────
+  TflFetcherFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "tfl-${Environment}-euw2-lambda-tfl-fetcher"
+      Runtime: python3.11
+      Handler: handler.lambda_handler
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/tfl-${Environment}-lambda-role"
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          KINESIS_STREAM_NAME: !Sub "tfl-${Environment}-euw2-kinesis-tube-arrivals"
+          TFL_LINES: "central,jubilee,northern"
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              return {"statusCode": 200, "body": "placeholder"}
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── CloudWatch Log Group ───────────────────────────────────────────────────
+  FetcherLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/tfl-${Environment}-euw2-lambda-tfl-fetcher"
+      RetentionInDays: 7
+
+Outputs:
+  FunctionName:
+    Value: !Ref TflFetcherFunction
+    Export:
+      Name: !Sub "tfl-${Environment}-lambda-function-name"
+
+  FunctionArn:
+    Value: !GetAtt TflFetcherFunction.Arn
+    Export:
+      Name: !Sub "tfl-${Environment}-lambda-function-arn"
