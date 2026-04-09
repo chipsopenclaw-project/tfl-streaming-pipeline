@@ -6,7 +6,6 @@ Real-time London Underground arrivals analytics
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from pyathena import connect
 from datetime import date
 
@@ -21,13 +20,21 @@ st.set_page_config(
 @st.cache_resource
 def get_connection():
     return connect(
+        aws_access_key_id=st.secrets["aws"]["aws_access_key_id"],
+        aws_secret_access_key=st.secrets["aws"]["aws_secret_access_key"],
         s3_staging_dir="s3://tfl-dev-euw2-s3-athena-results/queries/",
-        region_name="eu-west-2",
+        region_name=st.secrets["aws"]["aws_region"],
+        work_group="tfl-dev-workgroup",
     )
 
+@st.cache_data(ttl=60)
 def run_query(sql: str) -> pd.DataFrame:
     conn = get_connection()
-    return pd.read_sql(sql, conn)
+    cursor = conn.cursor()
+    cursor.execute(sql)
+    columns = [desc[0] for desc in cursor.description]
+    rows = cursor.fetchall()
+    return pd.DataFrame(rows, columns=columns)
 
 TODAY = str(date.today())
 
@@ -68,23 +75,19 @@ if page == "🕐 Current Wait Times":
         """)
 
     if df.empty:
-        st.warning("No data available yet. Please wait for the pipeline to process.")
+        st.warning("No data available yet.")
     else:
-        # ── Metrics ───────────────────────────────────────────────────────────
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Stations", df["station_name"].nunique())
         col2.metric("Avg Wait (mins)", round(df["wait_minutes"].mean(), 1))
         col3.metric("Max Wait (mins)", round(df["wait_minutes"].max(), 1))
-
         st.markdown("---")
 
-        # ── Filter by line ────────────────────────────────────────────────────
         lines = ["All"] + sorted(df["line_id"].unique().tolist())
         selected_line = st.selectbox("Filter by Line", lines)
         if selected_line != "All":
             df = df[df["line_id"] == selected_line]
 
-        # ── Bar chart ─────────────────────────────────────────────────────────
         fig = px.bar(
             df.head(30),
             x="station_name",
@@ -101,7 +104,6 @@ if page == "🕐 Current Wait Times":
         fig.update_layout(xaxis_tickangle=-45)
         st.plotly_chart(fig, use_container_width=True)
 
-        # ── Data table ────────────────────────────────────────────────────────
         st.subheader("Detail")
         st.dataframe(
             df[["station_name", "line_name", "platform_name", "towards", "wait_minutes", "current_location"]]
@@ -140,16 +142,13 @@ elif page == "📊 Line Performance":
     if df.empty:
         st.warning("No data available for today yet.")
     else:
-        # ── Metrics ───────────────────────────────────────────────────────────
         col1, col2, col3 = st.columns(3)
         busiest = df.iloc[0]
         col1.metric("Slowest Line", busiest["line_name"], f"{busiest['avg_wait_minutes']} mins avg")
         col2.metric("Total Records", df["record_count"].sum())
         col3.metric("Lines Monitored", len(df))
-
         st.markdown("---")
 
-        # ── Bar chart ─────────────────────────────────────────────────────────
         fig = px.bar(
             df,
             x="line_name",
@@ -161,7 +160,6 @@ elif page == "📊 Line Performance":
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # ── Data table ────────────────────────────────────────────────────────
         st.subheader("Detail")
         st.dataframe(
             df.rename(columns={
@@ -198,15 +196,12 @@ elif page == "🗺️ Busiest Stations":
     if df.empty:
         st.warning("No data available for today yet.")
     else:
-        # ── Metrics ───────────────────────────────────────────────────────────
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Stations", df["station_name"].nunique())
         col2.metric("Busiest Station", df.iloc[0]["station_name"])
         col3.metric("Peak Arrivals", df.iloc[0]["arrival_count"])
-
         st.markdown("---")
 
-        # ── Top 20 busiest stations bar chart ─────────────────────────────────
         top20 = df.groupby("station_name")["arrival_count"].sum().reset_index()
         top20 = top20.sort_values("arrival_count", ascending=False).head(20)
 
@@ -222,7 +217,6 @@ elif page == "🗺️ Busiest Stations":
         fig.update_layout(xaxis_tickangle=-45)
         st.plotly_chart(fig, use_container_width=True)
 
-        # ── Heatmap: Station x Hour ────────────────────────────────────────────
         st.subheader("Arrivals by Hour Heatmap")
         top10_stations = top20.head(10)["station_name"].tolist()
         heatmap_df = df[df["station_name"].isin(top10_stations)]
@@ -241,7 +235,6 @@ elif page == "🗺️ Busiest Stations":
         )
         st.plotly_chart(fig2, use_container_width=True)
 
-        # ── Data table ────────────────────────────────────────────────────────
         st.subheader("Detail")
         st.dataframe(
             df.head(50).rename(columns={
