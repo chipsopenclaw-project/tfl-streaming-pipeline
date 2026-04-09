@@ -9,7 +9,7 @@ Parameters:
 
 Resources:
 
-  # ── Lambda Role (write to Kinesis + CloudWatch logs) ──────────────────────
+  # ── Lambda Role ───────────────────────────────────────────────────────────
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -31,6 +31,16 @@ Resources:
                   - kinesis:PutRecord
                   - kinesis:PutRecords
                 Resource: !Sub "arn:aws:kinesis:eu-west-2:${AWS::AccountId}:stream/tfl-${Environment}-euw2-kinesis-tube-arrivals"
+        - PolicyName: SQSConsumePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !Sub "arn:aws:sqs:eu-west-2:${AWS::AccountId}:tfl-${Environment}-euw2-sqs-tfl-fetcher"
         - PolicyName: CloudWatchLogsPolicy
           PolicyDocument:
             Version: "2012-10-17"
@@ -41,13 +51,8 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "arn:aws:logs:*:*:*"
-      Tags:
-        - Key: Project
-          Value: tfl-streaming-pipeline
-        - Key: Environment
-          Value: !Ref Environment
 
-  # ── Firehose Role (write to S3 Bronze) ────────────────────────────────────
+  # ── Firehose Role ─────────────────────────────────────────────────────────
   FirehoseRole:
     Type: AWS::IAM::Role
     Properties:
@@ -83,13 +88,8 @@ Resources:
                   - kinesis:DescribeStream
                   - kinesis:ListShards
                 Resource: !Sub "arn:aws:kinesis:eu-west-2:${AWS::AccountId}:stream/tfl-${Environment}-euw2-kinesis-tube-arrivals"
-      Tags:
-        - Key: Project
-          Value: tfl-streaming-pipeline
-        - Key: Environment
-          Value: !Ref Environment
 
-  # ── Glue Role (read/write Bronze, Silver, Gold + CloudWatch) ──────────────
+  # ── Glue Role ─────────────────────────────────────────────────────────────
   GlueRole:
     Type: AWS::IAM::Role
     Properties:
@@ -134,11 +134,58 @@ Resources:
                   - kinesis:DescribeStream
                   - kinesis:ListShards
                 Resource: !Sub "arn:aws:kinesis:eu-west-2:${AWS::AccountId}:stream/tfl-${Environment}-euw2-kinesis-tube-arrivals"
-      Tags:
-        - Key: Project
-          Value: tfl-streaming-pipeline
-        - Key: Environment
-          Value: !Ref Environment
+
+  # ── EventBridge Scheduler Role ────────────────────────────────────────────
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "tfl-${Environment}-scheduler-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SQSSendMessagePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !Sub "arn:aws:sqs:eu-west-2:${AWS::AccountId}:tfl-${Environment}-euw2-sqs-tfl-fetcher"
+
+  # ── EventBridge Pipe Role ─────────────────────────────────────────────────
+  PipeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "tfl-${Environment}-pipe-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: pipes.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SQSReadPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !Sub "arn:aws:sqs:eu-west-2:${AWS::AccountId}:tfl-${Environment}-euw2-sqs-tfl-fetcher"
+        - PolicyName: LambdaInvokePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub "arn:aws:lambda:eu-west-2:${AWS::AccountId}:function:tfl-${Environment}-euw2-lambda-tfl-fetcher"
 
 Outputs:
   LambdaRoleArn:
@@ -155,3 +202,13 @@ Outputs:
     Value: !GetAtt GlueRole.Arn
     Export:
       Name: !Sub "tfl-${Environment}-glue-role-arn"
+
+  SchedulerRoleArn:
+    Value: !GetAtt SchedulerRole.Arn
+    Export:
+      Name: !Sub "tfl-${Environment}-scheduler-role-arn"
+
+  PipeRoleArn:
+    Value: !GetAtt PipeRole.Arn
+    Export:
+      Name: !Sub "tfl-${Environment}-pipe-role-arn"

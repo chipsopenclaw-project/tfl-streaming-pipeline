@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "TfL Streaming Pipeline - SQS Queue for 30s trigger"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+Resources:
+
+  # ── SQS Queue (Lambda trigger via EventBridge Pipe) ───────────────────────
+  TflFetcherQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "tfl-${Environment}-euw2-sqs-tfl-fetcher"
+      VisibilityTimeout: 120
+      MessageRetentionPeriod: 300
+      ReceiveMessageWaitTimeSeconds: 0
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt TflFetcherDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── Dead Letter Queue (failed messages) ───────────────────────────────────
+  TflFetcherDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "tfl-${Environment}-euw2-sqs-tfl-fetcher-dlq"
+      MessageRetentionPeriod: 86400
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  QueueUrl:
+    Value: !Ref TflFetcherQueue
+    Export:
+      Name: !Sub "tfl-${Environment}-sqs-queue-url"
+
+  QueueArn:
+    Value: !GetAtt TflFetcherQueue.Arn
+    Export:
+      Name: !Sub "tfl-${Environment}-sqs-queue-arn"
+
+  DLQArn:
+    Value: !GetAtt TflFetcherDLQ.Arn
+    Export:
+      Name: !Sub "tfl-${Environment}-sqs-dlq-arn"

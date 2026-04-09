@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "TfL Streaming Pipeline - EventBridge Scheduler + SQS + Pipe"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+Resources:
+
+  # ── EventBridge Schedule (every 1 minute) ─────────────────────────────────
+  TflFetcherSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub "tfl-${Environment}-euw2-schedule-tfl-fetcher"
+      Description: "Trigger TfL fetcher every minute via SQS"
+      ScheduleExpression: "rate(1 minute)"
+      ScheduleExpressionTimezone: "Europe/London"
+      State: ENABLED
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      Target:
+        Arn: !Sub "arn:aws:sqs:eu-west-2:${AWS::AccountId}:tfl-${Environment}-euw2-sqs-tfl-fetcher"
+        RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/tfl-${Environment}-scheduler-role"
+        Input: '{"trigger": "scheduled"}'
+
+  # ── EventBridge Pipe (SQS -> Lambda) ──────────────────────────────────────
+  TflFetcherPipe:
+    Type: AWS::Pipes::Pipe
+    Properties:
+      Name: !Sub "tfl-${Environment}-euw2-pipe-tfl-fetcher"
+      Description: "Pipe SQS messages to Lambda"
+      RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/tfl-${Environment}-pipe-role"
+      Source: !Sub "arn:aws:sqs:eu-west-2:${AWS::AccountId}:tfl-${Environment}-euw2-sqs-tfl-fetcher"
+      SourceParameters:
+        SqsQueueParameters:
+          BatchSize: 1
+          MaximumBatchingWindowInSeconds: 0
+      Target: !Sub "arn:aws:lambda:eu-west-2:${AWS::AccountId}:function:tfl-${Environment}-euw2-lambda-tfl-fetcher"
+      TargetParameters:
+        LambdaFunctionParameters:
+          InvocationType: FIRE_AND_FORGET
+      Tags:
+        Project: tfl-streaming-pipeline
+        Environment: !Ref Environment
+
+Outputs:
+  ScheduleName:
+    Value: !Ref TflFetcherSchedule
+    Export:
+      Name: !Sub "tfl-${Environment}-schedule-name"
+
+  PipeName:
+    Value: !Ref TflFetcherPipe
+    Export:
+      Name: !Sub "tfl-${Environment}-pipe-name"
