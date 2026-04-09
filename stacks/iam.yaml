@@ -155,6 +155,15 @@ Resources:
               - Effect: Allow
                 Action: sqs:SendMessage
                 Resource: !Sub "arn:aws:sqs:eu-west-2:${AWS::AccountId}:tfl-${Environment}-euw2-sqs-tfl-fetcher"
+        - PolicyName: GlueStartJobPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: glue:StartJobRun
+                Resource:
+                  - !Sub "arn:aws:glue:eu-west-2:${AWS::AccountId}:job/tfl-${Environment}-euw2-glue-bronze-to-silver"
+                  - !Sub "arn:aws:glue:eu-west-2:${AWS::AccountId}:job/tfl-${Environment}-euw2-glue-silver-to-gold"
 
   # ── EventBridge Pipe Role ─────────────────────────────────────────────────
   PipeRole:

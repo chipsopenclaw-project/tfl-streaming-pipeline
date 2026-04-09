@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "TfL Streaming Pipeline - Glue Database + Jobs"
+Description: "TfL Streaming Pipeline - Glue Database + Jobs + Triggers"
 
 Parameters:
   Environment:
@@ -95,6 +95,30 @@ Resources:
       SchemaChangePolicy:
         UpdateBehavior: UPDATE_IN_DATABASE
         DeleteBehavior: LOG
+
+  # ── Glue Trigger: Bronze -> Silver (every 5 min, DISABLED) ────────────────
+  BronzeToSilverTrigger:
+    Type: AWS::Glue::Trigger
+    Properties:
+      Name: !Sub "tfl-${Environment}-euw2-trigger-bronze-to-silver"
+      Description: "Trigger Bronze->Silver every 5 minutes (DISABLED - use Glue Streaming in prod)"
+      Type: SCHEDULED
+      Schedule: "cron(0/5 * * * ? *)"
+      StartOnCreation: false
+      Actions:
+        - JobName: !Ref BronzeToSilverJob
+
+  # ── Glue Trigger: Silver -> Gold (every 5 min, DISABLED) ──────────────────
+  SilverToGoldTrigger:
+    Type: AWS::Glue::Trigger
+    Properties:
+      Name: !Sub "tfl-${Environment}-euw2-trigger-silver-to-gold"
+      Description: "Trigger Silver->Gold every 5 minutes (DISABLED - use Glue Streaming in prod)"
+      Type: SCHEDULED
+      Schedule: "cron(2/5 * * * ? *)"
+      StartOnCreation: false
+      Actions:
+        - JobName: !Ref SilverToGoldJob
 
 Outputs:
   DatabaseName:

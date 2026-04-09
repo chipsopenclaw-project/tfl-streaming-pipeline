@@ -9,7 +9,7 @@ Parameters:
 
 Resources:
 
-  # ── EventBridge Schedule (every 1 minute) ─────────────────────────────────
+  # ── EventBridge Schedule (every 1 minute -> SQS) ──────────────────────────
   TflFetcherSchedule:
     Type: AWS::Scheduler::Schedule
     Properties:
