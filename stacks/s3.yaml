@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "TfL Streaming Pipeline - S3 Buckets (Bronze / Silver / Gold / Scripts / Athena)"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment environment
+
+Resources:
+
+  # ── Bronze (raw JSON from Kinesis Firehose) ────────────────────────────────
+  BronzeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "tfl-${Environment}-euw2-s3-bronze"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: bronze
+
+  # ── Silver (cleaned Parquet) ───────────────────────────────────────────────
+  SilverBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "tfl-${Environment}-euw2-s3-silver"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: silver
+
+  # ── Gold (aggregated analytics tables) ────────────────────────────────────
+  GoldBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "tfl-${Environment}-euw2-s3-gold"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: gold
+
+  # ── Glue Scripts ───────────────────────────────────────────────────────────
+  ScriptsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "tfl-${Environment}-euw2-s3-glue-scripts"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: scripts
+
+  # ── Athena Query Results ───────────────────────────────────────────────────
+  AthenaResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "tfl-${Environment}-euw2-s3-athena-results"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Layer
+          Value: athena
+
+Outputs:
+  BronzeBucketName:
+    Value: !Ref BronzeBucket
+    Export:
+      Name: !Sub "tfl-${Environment}-bronze-bucket-name"
+
+  SilverBucketName:
+    Value: !Ref SilverBucket
+    Export:
+      Name: !Sub "tfl-${Environment}-silver-bucket-name"
+
+  GoldBucketName:
+    Value: !Ref GoldBucket
+    Export:
+      Name: !Sub "tfl-${Environment}-gold-bucket-name"
+
+  ScriptsBucketName:
+    Value: !Ref ScriptsBucket
+    Export:
+      Name: !Sub "tfl-${Environment}-scripts-bucket-name"
+
+  AthenaResultsBucketName:
+    Value: !Ref AthenaResultsBucket
+    Export:
+      Name: !Sub "tfl-${Environment}-athena-results-bucket-name"
