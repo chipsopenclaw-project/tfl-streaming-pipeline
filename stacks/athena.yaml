@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "TfL Streaming Pipeline - Athena Workgroup"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+Resources:
+
+  # ── Athena Workgroup ───────────────────────────────────────────────────────
+  TflWorkgroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: !Sub "tfl-${Environment}-workgroup"
+      Description: "TfL Streaming Pipeline Athena Workgroup"
+      State: ENABLED
+      WorkGroupConfiguration:
+        ResultConfiguration:
+          OutputLocation: !Sub "s3://tfl-${Environment}-euw2-s3-athena-results/queries/"
+        EnforceWorkGroupConfiguration: true
+        PublishCloudWatchMetricsEnabled: true
+        BytesScannedCutoffPerQuery: 1073741824
+      Tags:
+        - Key: Project
+          Value: tfl-streaming-pipeline
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── Named Query 1: Line Performance ───────────────────────────────────────
+  QueryLinePerformance:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Name: "tfl-line-performance-today"
+      Description: "Which line has most delays today?"
+      Database: !Sub "tfl_${Environment}_db"
+      WorkGroup: !Ref TflWorkgroup
+      QueryString: !Sub |
+        SELECT
+          line_id,
+          line_name,
+          ROUND(avg_wait_seconds / 60, 2) AS avg_wait_minutes,
+          ROUND(min_wait_seconds / 60, 2) AS min_wait_minutes,
+          ROUND(max_wait_seconds / 60, 2) AS max_wait_minutes,
+          record_count
+        FROM gold_line_performance
+        WHERE arrival_date = CURRENT_DATE
+        ORDER BY avg_wait_seconds DESC;
+
+  # ── Named Query 2: Busiest Stations ───────────────────────────────────────
+  QueryBusiestStations:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Name: "tfl-busiest-stations-today"
+      Description: "Busiest stations by arrival count today"
+      Database: !Sub "tfl_${Environment}_db"
+      WorkGroup: !Ref TflWorkgroup
+      QueryString: !Sub |
+        SELECT
+          station_name,
+          line_id,
+          arrival_hour,
+          arrival_count,
+          ROUND(avg_wait_seconds / 60, 2) AS avg_wait_minutes
+        FROM gold_station_arrivals
+        WHERE arrival_date = CURRENT_DATE
+        ORDER BY arrival_count DESC
+        LIMIT 20;
+
+  # ── Named Query 3: Current Wait Times ─────────────────────────────────────
+  QueryCurrentWaitTimes:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Name: "tfl-current-wait-times"
+      Description: "Current wait times per station"
+      Database: !Sub "tfl_${Environment}_db"
+      WorkGroup: !Ref TflWorkgroup
+      QueryString: !Sub |
+        SELECT
+          station_name,
+          line_id,
+          line_name,
+          platform_name,
+          towards,
+          wait_minutes,
+          current_location,
+          expected_arrival
+        FROM gold_current_wait_times
+        ORDER BY line_id, wait_minutes ASC;
+
+  # ── Named Query 4: Silver Raw Check ───────────────────────────────────────
+  QuerySilverCheck:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Name: "tfl-silver-raw-check"
+      Description: "Check raw Silver data"
+      Database: !Sub "tfl_${Environment}_db"
+      WorkGroup: !Ref TflWorkgroup
+      QueryString: !Sub |
+        SELECT
+          line_id,
+          COUNT(*) AS total_records,
+          MIN(expected_arrival) AS earliest,
+          MAX(expected_arrival) AS latest
+        FROM silver_arrivals
+        GROUP BY line_id
+        ORDER BY line_id;
+
+Outputs:
+  WorkgroupName:
+    Value: !Ref TflWorkgroup
+    Export:
+      Name: !Sub "tfl-${Environment}-athena-workgroup"
