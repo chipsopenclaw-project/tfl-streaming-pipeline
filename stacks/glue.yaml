@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "TfL Streaming Pipeline - Glue Database + Jobs"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+Resources:
+
+  # ── Glue Database ─────────────────────────────────────────────────────────
+  TflDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Sub "tfl_${Environment}_db"
+        Description: "TfL Streaming Pipeline - Data Catalog"
+
+  # ── Glue Job: Bronze -> Silver ────────────────────────────────────────────
+  BronzeToSilverJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: !Sub "tfl-${Environment}-euw2-glue-bronze-to-silver"
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/tfl-${Environment}-glue-role"
+      GlueVersion: "4.0"
+      WorkerType: G.1X
+      NumberOfWorkers: 2
+      Timeout: 60
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub "s3://tfl-${Environment}-euw2-s3-glue-scripts/bronze_to_silver.py"
+        PythonVersion: "3"
+      DefaultArguments:
+        "--job-language": "python"
+        "--bronze_bucket": !Sub "tfl-${Environment}-euw2-s3-bronze"
+        "--silver_bucket": !Sub "tfl-${Environment}-euw2-s3-silver"
+        "--enable-continuous-cloudwatch-log": "true"
+        "--enable-metrics": "true"
+      Tags:
+        Project: tfl-streaming-pipeline
+        Environment: !Ref Environment
+
+  # ── Glue Job: Silver -> Gold ──────────────────────────────────────────────
+  SilverToGoldJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: !Sub "tfl-${Environment}-euw2-glue-silver-to-gold"
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/tfl-${Environment}-glue-role"
+      GlueVersion: "4.0"
+      WorkerType: G.1X
+      NumberOfWorkers: 2
+      Timeout: 60
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub "s3://tfl-${Environment}-euw2-s3-glue-scripts/silver_to_gold.py"
+        PythonVersion: "3"
+      DefaultArguments:
+        "--job-language": "python"
+        "--silver_bucket": !Sub "tfl-${Environment}-euw2-s3-silver"
+        "--gold_bucket":   !Sub "tfl-${Environment}-euw2-s3-gold"
+        "--enable-continuous-cloudwatch-log": "true"
+        "--enable-metrics": "true"
+      Tags:
+        Project: tfl-streaming-pipeline
+        Environment: !Ref Environment
+
+  # ── Glue Crawler: Silver ──────────────────────────────────────────────────
+  SilverCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "tfl-${Environment}-euw2-crawler-silver"
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/tfl-${Environment}-glue-role"
+      DatabaseName: !Ref TflDatabase
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://tfl-${Environment}-euw2-s3-silver/arrivals/"
+      TablePrefix: "silver_"
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: LOG
+
+  # ── Glue Crawler: Gold ────────────────────────────────────────────────────
+  GoldCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "tfl-${Environment}-euw2-crawler-gold"
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/tfl-${Environment}-glue-role"
+      DatabaseName: !Ref TflDatabase
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://tfl-${Environment}-euw2-s3-gold/"
+      TablePrefix: "gold_"
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: LOG
+
+Outputs:
+  DatabaseName:
+    Value: !Ref TflDatabase
+    Export:
+      Name: !Sub "tfl-${Environment}-glue-database-name"
+
+  BronzeToSilverJobName:
+    Value: !Ref BronzeToSilverJob
+    Export:
+      Name: !Sub "tfl-${Environment}-bronze-to-silver-job"
+
+  SilverToGoldJobName:
+    Value: !Ref SilverToGoldJob
+    Export:
+      Name: !Sub "tfl-${Environment}-silver-to-gold-job"
